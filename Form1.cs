@@ -1,0 +1,479 @@
+﻿/* Student Name: Varun Dua
+ * Student ID: 19230587
+ * Date: 30/11/2019
+ * Assignment: 5
+ * Assignment: Your client TeamBuilder Ltd wishes to update the application developed previously by adding new
+ * functionality, and refactoring some of its existing functionality. Due to recent successful trading, the company has decided to increase its event offerings from 5 to ten,
+ * while retaining the same five locations as before (see appendix for event and location offerings). With
+ * such an increased array of events at each location and after use of their current system by the sales
+ * team for a period of time, management have realized the limitations of their existing system in that:
+ * a) they need to provide faster pricing information to their sales team.
+ * b) clients should be able to book multiple places at an event, and also to book multiple events in
+ * the same sales order.
+ * c) they need to keep a live count of places available for each of its offerings to ensure they do not
+ * over sell places.
+*/
+
+
+using System;
+using System.IO;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+namespace Dua_Varun_Assignment5_MS806
+{
+    public partial class Form1 : Form
+    {
+        public Form1()
+        {
+            InitializeComponent();
+        }
+
+        
+        const String STOCKFILE = @"D:\Business Application Programming\Assignments\Dua_Varun_Assignment5_MS806\Dua_Varun_Assignment5_MS806\Debug\Stock_File.txt";
+        const String TRANSACTIONFILE = @"D:\Business Application Programming\Assignments\Dua_Varun_Assignment5_MS806\Dua_Varun_Assignment5_MS806\Debug\";
+        const String REPORTFILE = @"D:\Business Application Programming\Assignments\Dua_Varun_Assignment5_MS806\Dua_Varun_Assignment5_MS806\Debug\";
+        String TodayFile;
+        String ManagementFile;
+        int spots;
+        int EventIndex;
+        int LocationIndex;
+        int MealIndex;
+        int TotalCost = 0;
+        int[] BookingCosts = { 0, 0, 0 };
+        int NumberOfBookings = 0;
+        List<int> OrderCosts = new List<int>();
+        List<String> OrderDetails = new List<String>();
+        readonly String[] Event = { "Murder Mystery Weekend", "CSI Weekend", "The Great Outdoors", "The Chase", "Digital Refresh", "Action Photography", "Team Ryder Cup", "Abseiling", "War Games", "Find Wally" };
+        readonly String[] Locations = { "Cork", "Dublin", "Galway", "Belmullet", "Belfast" };
+        readonly int[] EventPrice = { 600, 1000, 1500, 1800, 599, 999, 619, 499, 1999, 799 };
+        readonly int[] EventDays = { 2, 3, 4, 6, 2, 5, 3, 2, 6, 5 };
+        readonly int[] LocationPrice = { 250, 165, 225, 305, 95 };
+        
+        readonly String[] Meals = { "Full Board", "Half Board", "Breakfast", "No Meal" };
+        readonly int[,] MealPrice = { { 99, 75, 24, 0 }, { 149, 136, 36, 0 }, { 198, 150, 48, 0 }, { 297, 225, 72, 0 }, { 99, 75, 24, 0 }, { 248, 188, 60, 0 }, { 149, 113, 36, 0 }, { 99, 75, 24, 0 }, { 297, 225, 72, 0 }, { 248, 188, 60, 0 } };
+        
+        /*Stock - Keepng track of Current Stock and Stock Reserved in a Booking*/
+        int[,] CurrentStock = new int[10, 5];
+        int[,] ReserveStock = new int[10, 5];
+
+        /*Event handler for Form Load - Transcaction File created*/
+        private void Form1_Load(object sender, EventArgs e)
+        {
+            AddEventView();
+            AddLocationView();
+            AddMealView();
+            InitializeStock();
+            RefreshReserve();
+            CompleteButton.Enabled = false;
+            
+            DateTime datetime = DateTime.UtcNow.Date;
+            StreamWriter CreateFile;
+            TodayFile = TRANSACTIONFILE + "Transaction_File_" + datetime.ToString("dd/MM/yyyy") + ".txt";
+            if (File.Exists(TodayFile) != true)
+            {
+                CreateFile = File.CreateText(TodayFile);
+                CreateFile.Close();
+            }
+                
+        }
+
+        /*Method to Add Events to Event List View*/
+        private void AddEventView()
+        {
+            EventView.Columns.Add("Events");
+            EventView.Columns.Add("Days");
+            EventView.Columns.Add("Price");
+            for(int j=0;j<10;j++)
+            {
+                ListViewItem Item = new ListViewItem(Event[j]);                
+                Item.SubItems.Add(EventDays[j].ToString());
+                Item.SubItems.Add(EventPrice[j].ToString("C"));
+                EventView.Items.Add(Item);
+            }
+            EventView.AutoResizeColumns(ColumnHeaderAutoResizeStyle.HeaderSize);
+        }
+
+        /*Method to Add Locations to Location List View*/
+        private void AddLocationView()
+        {
+            LocationView.Columns.Add("Location");            
+            LocationView.Columns.Add("Price");
+            for (int j = 0; j < 5; j++)
+            {
+                ListViewItem Item = new ListViewItem(Locations[j]);                
+                Item.SubItems.Add(LocationPrice[j].ToString("C"));
+                LocationView.Items.Add(Item);
+            }
+            LocationView.AutoResizeColumns(ColumnHeaderAutoResizeStyle.HeaderSize);
+        }
+
+        /*Method to Add Headings to Location List View*/
+        private void AddMealView()
+        {
+            MealView.Columns.Add("Meal");
+            MealView.Columns.Add("Price");
+        }
+
+        /*Overloaded Method to Add Meal prices to Meal List View*/
+        private void AddMealView(int EventItem)
+        {
+            MealView.Items.Clear();
+            for (int j = 0; j < 4; j++)
+            {
+                ListViewItem Item = new ListViewItem(Meals[j]);
+                Item.SubItems.Add(MealPrice[EventItem,j].ToString("C"));
+                MealView.Items.Add(Item);
+            }
+            MealView.AutoResizeColumns(ColumnHeaderAutoResizeStyle.HeaderSize);
+        }
+
+        /*Event handler for Event Selection from List View*/
+        private void EventView_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            foreach(int item in EventView.SelectedIndices)
+            {
+                AddMealView(item);
+                EventLabel.Text = "Event: " + Event[item] + ", Event Cost: " + EventPrice[item].ToString("C");
+                BookingCosts[0] = EventPrice[item];
+                TotalCost = TotalCosts();
+                CostLabel.Text = TotalCost.ToString("C");
+                EventIndex = item;
+                MealLabel.Text = "";
+            }
+        }
+
+        /*Method to keep track of Booking Costs*/
+        private int TotalCosts()
+        {
+            int Cost=0;
+            for(int i= 0;i<3;i++)
+            {
+                Cost += BookingCosts[i];
+            }
+            return Cost;
+            
+        }
+
+        /*Event handler for Location Selection from List View*/
+        private void LocationView_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            foreach (int item in LocationView.SelectedIndices)
+            {
+                
+                LocationLabel.Text = "Location: " + Locations[item] + ", Location Cost: " + LocationPrice[item].ToString("C");
+                BookingCosts[1] = LocationPrice[item] * EventDays[EventIndex];
+                TotalCost = TotalCosts();
+                CostLabel.Text = TotalCost.ToString("C");
+                LocationIndex = item;
+            }
+        }
+
+        /*Event handler for Meal Selection from List View*/
+        private void MealView_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            foreach (int item in MealView.SelectedIndices)
+            {
+
+                MealLabel.Text = "Meal: " + Meals[item] + ", Meal Cost: " + MealPrice[EventIndex, item].ToString("C");
+                BookingCosts[2] = MealPrice[EventIndex, item];
+                TotalCost = TotalCosts();
+                CostLabel.Text = TotalCost.ToString("C");
+                MealIndex = item;
+            }
+        }
+
+        /*Method to Initialize Stick from the Stock File*/
+        private void InitializeStock()
+        {
+            if (File.Exists(STOCKFILE) != true)
+            {
+                MessageBox.Show("Stock File deleted. Please check!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                this.Close();
+            }
+            StreamReader InputFile;
+            InputFile = File.OpenText(STOCKFILE);
+            for (int i=0;i<10;i++)
+            {
+                for (int j=0; j < 5;j++)
+                {
+                    CurrentStock[i, j] = int.Parse(InputFile.ReadLine());
+                }
+            }
+            InputFile.Close();
+            
+        }
+
+        /*Method to Refresh the Reserved quanitities on a booking (to be used for Clear functionality)*/
+        private void RefreshReserve()
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                for (int j = 0; j < 5; j++)
+                {
+                    ReserveStock[i, j] = 0;
+                }
+            }
+
+        }
+
+        /*Reserving stock on a Booking*/
+        private int ReservingStock()
+        {
+            int spots = int.Parse(AddTextBox.Text);
+            if(CurrentStock[EventIndex, LocationIndex] > ReserveStock[EventIndex, LocationIndex])
+            {
+                if (CurrentStock[EventIndex, LocationIndex] - (spots + ReserveStock[EventIndex, LocationIndex]) >= 0)
+                {
+                    ReserveStock[EventIndex, LocationIndex] += spots;
+                    return 0;
+                }
+                else
+                {
+                    return CurrentStock[EventIndex, LocationIndex] - ReserveStock[EventIndex, LocationIndex];
+                }
+            }
+            else
+            {
+                return -1;
+            }
+            
+        }
+
+        /*Upating Decremented stock into the stock file*/
+        private void UpdateStock()
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                for (int j = 0; j < 5; j++)
+                {
+                    CurrentStock[i, j] -= ReserveStock[i, j];
+                }
+            }
+            StreamWriter OutputFile;
+            OutputFile = File.CreateText(STOCKFILE);
+            
+            for (int i = 0;i < 10; i++)
+            {
+                for(int j = 0; j < 5; j++)
+                {
+                    OutputFile.WriteLine(CurrentStock[i,j]);
+                }
+            }
+            OutputFile.Close();
+            RefreshReserve();
+        }
+
+        /*Event handler for Add button Click*/
+        private void AddButton_Click(object sender, EventArgs e)
+        {
+            if(EventView.SelectedIndices.Count > 0)
+            {
+                if(LocationView.SelectedIndices.Count > 0)
+                {
+                    if(MealView.SelectedIndices.Count > 0)
+                    {
+                        try
+                        {
+                            spots = int.Parse(AddTextBox.Text);
+                            if (spots > 0)
+                            {
+                                if (ReservingStock() == 0)       //Stock Not sold out and requested stock booking valid
+                                {
+                                    String Message = String.Format("Event Details \nEvent: {0} \nLocation: {1} \nMeal: {2} \nCosts: {3:C} \nSpots: {4}", Event[EventIndex], Locations[LocationIndex], Meals[MealIndex], TotalCost*spots, spots);
+                                    DialogResult result = MessageBox.Show(Message, "Event Details", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                                    if (result == DialogResult.OK)
+                                    {
+                                        EventView.SelectedItems.Clear();
+                                        LocationView.SelectedItems.Clear();
+                                        MealView.Items.Clear();
+                                        AddTextBox.Clear();
+                                        EventLabel.Text = "";
+                                        LocationLabel.Text = "";
+                                        MealLabel.Text = "";                                        
+                                        OrderCosts.Add(TotalCost * spots);
+                                        OrderDetails.Add(Event[EventIndex] + "\n" + Locations[LocationIndex] + "\n" + Meals[MealIndex] + "\n" + spots);
+                                        NumberOfBookings++;
+                                        CompleteButton.Enabled = true;
+                                        EventBox.Items.Add("***Event***");
+                                        EventBox.Items.Add(Event[EventIndex]);
+                                        EventBox.Items.Add(Locations[LocationIndex]);
+                                        EventBox.Items.Add(Meals[MealIndex]);
+                                        EventBox.Items.Add(spots);
+                                        EventBox.Items.Add((TotalCost * spots).ToString("C"));
+                                        CostLabel.Text = OrderCosts.Sum().ToString("C");
+                                    }
+
+                                }
+                                else if(ReservingStock() == -1)     //Stock Sold out
+                                {
+                                    MessageBox.Show("All Spots sold out!", "Spots", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+                                    AddTextBox.Select();
+                                    AddTextBox.SelectAll();
+                                }
+                                else                           //Stock Not sold out but requested stock booking invalid
+                                {
+                                    MessageBox.Show(ReservingStock().ToString() + " Spots left", "Spots", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+                                    AddTextBox.Text = ReservingStock().ToString();
+                                    AddTextBox.Select();
+                                    AddTextBox.SelectAll();
+                                }
+                            }
+                            else
+                            {
+                                MessageBox.Show("Please Enter a Non Zero/Non Negative number of spots", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                                AddTextBox.Select();
+                                AddTextBox.SelectAll();
+                            }
+                        }
+                        catch (Exception)
+                        {
+                            MessageBox.Show("Please Enter a Numeric digit", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            AddTextBox.Select();
+                            AddTextBox.SelectAll();
+                        }
+                    }
+                    else
+                    {
+                        MessageBox.Show("Please Select a Meal", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        AddTextBox.Select();
+                        AddTextBox.SelectAll();
+                    }
+                }
+                else
+                {
+                    MessageBox.Show("Please Select a Location", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    AddTextBox.Select();
+                    AddTextBox.SelectAll();
+                }
+
+            }
+            else
+            {
+                MessageBox.Show("Please Select an Event", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                AddTextBox.Select();
+                AddTextBox.SelectAll();
+            }
+
+                       
+        }
+
+        /*Event handler for Complete Button Click*/
+        private void CompleteButton_Click(object sender, EventArgs e)
+        {
+            String[] Detail = OrderDetails.ToArray();
+            int[] Cost = OrderCosts.ToArray();
+            int Sum = OrderCosts.Sum();
+            String Message = "";
+            for(int i = 0; i < Detail.Length; i++)
+            {
+                Message += String.Format("Event {0} {1}\n{2}\nTotal: {3}\n\n", i + 1, Detail[i], Cost[i].ToString("C"),Sum.ToString("C"));
+            }
+            MessageBox.Show(Message, "Bookings", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            UpdateStock();
+            InitializeStock();
+            CompleteButton.Enabled = false;
+            UpdateTransaction(Detail, Cost, Sum);
+            CostLabel.Text = "";
+            EventBox.Items.Clear();
+            ClearStream();
+        }
+
+        /*Event handler for Clear button*/
+        private void ClearButton_Click(object sender, EventArgs e)
+        {
+            RefreshReserve();
+            EventView.SelectedItems.Clear();
+            LocationView.SelectedItems.Clear();
+            MealView.Items.Clear();
+            EventLabel.Text = "";
+            LocationLabel.Text = "";
+            MealLabel.Text = "";
+            CostLabel.Text = "";
+            AddTextBox.Clear();
+            CompleteButton.Enabled = false;
+            EventBox.Items.Clear();
+            ClearStream();
+        }
+
+        /*Method to Clear the Details of Previous Orders*/
+        private void ClearStream()
+        {
+            OrderDetails.Clear();
+            OrderCosts.Clear();
+        }
+
+        /*Event handler for Exit button*/
+        private void ExitButton_Click(object sender, EventArgs e)
+        {
+            this.Close();
+        }
+
+        /*Method to Update Data into Transaction File*/
+        private void UpdateTransaction(String[] Detail, int[] Costs, int Sum)
+        {
+            StreamWriter OutputFile;
+            OutputFile = File.AppendText(TodayFile);
+            OutputFile.WriteLine("*****Booking*****");
+            OutputFile.WriteLine(DateTime.UtcNow);
+            for (int i = 0; i < Detail.Length; i++)
+            {
+                OutputFile.WriteLine(Detail[i]);
+                OutputFile.WriteLine(Costs[i]);
+            }
+            OutputFile.WriteLine(Sum);
+            OutputFile.Close();
+        }
+
+        private void AddTextBox_TextChanged(object sender, EventArgs e)
+        {
+            //CostLabel.Text = (spots * TotalCost).ToString("C");
+        }
+
+        /*Event Handler for Report Button*/
+        private void ReportButton_Click(object sender, EventArgs e)
+        {
+            DateTime datetime = DateTime.UtcNow;
+            StreamWriter CreateFile;
+            ManagementFile = REPORTFILE + "Management_Report_" + datetime.ToString("dd/MM/yyyy") + ".txt";
+            if (File.Exists(TodayFile) != true)
+            {
+                CreateFile = File.CreateText(TodayFile);
+                CreateFile.Close();
+            }
+
+            StreamWriter OutputFile;
+            int Space1 = 25;
+            
+            OutputFile = File.CreateText(ManagementFile);
+            OutputFile.WriteLine("**********Stock Report************".PadLeft(85,' '));
+            OutputFile.WriteLine(DateTime.UtcNow.ToString().PadLeft(75,' '));
+            OutputFile.WriteLine();
+            OutputFile.Write("Event".PadRight(Space1,' '));
+            for(int i = 0; i<5; i++)
+            {
+                OutputFile.Write(Locations[i].PadRight(Space1,' '));
+            }
+            OutputFile.WriteLine();
+            for(int i = 0; i<10; i++)
+            {
+                OutputFile.Write(Event[i].PadRight(Space1, ' '));
+                for (int j = 0; j < 5; j++)
+                {
+                    OutputFile.Write(CurrentStock[i, j].ToString().PadRight(Space1, ' '));
+                }
+                OutputFile.WriteLine();
+
+            }
+            OutputFile.Close();
+            MessageBox.Show("Report Created", "Message", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            
+        }
+    }
+}
